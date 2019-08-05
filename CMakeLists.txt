@@ -4,6 +4,12 @@ project(letsplay
     DESCRIPTION "Emulator thing"
 )
 
+list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
+
+# Setup webrtc library
+include(InstallDepotTools)
+include(InstallWebRTC)
+
 option(UseSTLFilesystem "Use std::filesystem instead of boost::filesystem" OFF)
 
 if(NOT UseSTLFilesystem)
@@ -26,26 +32,6 @@ if(GIT_FOUND AND EXISTS "${PROJECT_SOURCE_DIR}/.git")
         endif()
     endif()
 endif()
-
-#[[ clang-tidy segfaults on LetsPlayServer.cpp; too complex?
-if(CMAKE_VERSION VERSION_GREATER 3.6)
-    # Use clang-tidy if available
-    option(CLANG_TIDY_FIX "Perform fixes for Clang-Tidy" OFF)
-    find_program(
-        CLANG_TIDY_EXE
-        NAMES "clang-tidy"
-        DOC "Path to the clang-tidy executable"
-    )
-
-    if(CLANG_TIDY_EXE)
-        if(CLANG_TIDY_FIX)
-            set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_EXE}" "-fix" "-checks=-*,cppcoreguidelines-*,clang-analyzer-*,misc-*,modernize-*,performance-*,portability-*")
-        else()
-            set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_EXE}" "-checks=-*,cppcoreguidelines-*,clang-analyzer-*,misc-*,modernize-*,performance-*,portability-*")
-        endif()
-    endif()
-endif()
-]]
 
 if(NOT EXISTS "${PROJECT_SOURCE_DIR}/external/json/README.md")
     message(FATAL_ERROR "The json library submodule was not downloaded. Please manually update submodules and try again.")
