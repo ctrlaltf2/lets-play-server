@@ -1,4 +1,4 @@
-/**
+/* **
  * @file common/typedefs.h
  *
  * @author ctrlaltf2
@@ -6,7 +6,6 @@
  *  @section DESCRIPTION
  *  Common typedefs used in multiple files.
  */
-
 #include <memory>
 #include <string>
 
@@ -24,3 +23,12 @@ using LetsPlayUserHdl = std::weak_ptr<LetsPlayUser>;
  * The type used to identify emulators.
  */
 using EmuID_t = std::string;
+
+/* Headers are hell
+ *
+enum PixelFormat {
+    RGB888,
+    XRGB8888
+};*/
+#define RGB888 42
+#define XRGB8888 3 // .14159

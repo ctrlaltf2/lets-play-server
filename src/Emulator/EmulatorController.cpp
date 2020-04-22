@@ -56,9 +56,14 @@ namespace EmulatorController {
     static thread_local VideoFormat videoFormat;
 
     /**
-     * Pointer to the current video buffer.
+     * Pointer to the current video buffer. Used when the core is doing software rendering.
      */
     static thread_local const void *currentBuffer{nullptr};
+
+    /**
+     * Location of the gl framebuffer. Used if the core is using hw render.
+     */
+    static thread_local unsigned int hwBuffer{0};
 
     /**
      * Mutex for accessing m_screen or m_nextFrame or updating the buffer.
@@ -85,6 +90,11 @@ namespace EmulatorController {
      * libretro hardware render interface info
      */
     static thread_local retro_hw_render_callback hw_render_cb;
+
+    /**
+     * Flag for if using hardware render
+     */
+    static thread_local std::atomic<bool> hwRender{false};
 
     /**
      * Whether or not this emulator is fast forwarded
@@ -200,7 +210,6 @@ void EmulatorController::Run(const std::string& corePath, const std::string& rom
         return;
     }
 
-
     // Create emu folder if it doesn't already exist
     t_server->logger.log("Creating emulator directories...");
     boost::filesystem::create_directories(dataDirectory = t_server->emuDirectory / t_id);
@@ -244,7 +253,7 @@ void EmulatorController::Run(const std::string& corePath, const std::string& rom
 
     // Do a lil safe copy here
     coreName = std::string(30, char(0));
-    std::snprintf(&coreName[0], 99, "%s", system.library_name);
+    std::snprintf(&coreName[0], 30, "%s", system.library_name);
 
     server->logger.log(id, ": Core name: '", coreName, "'");
 
@@ -272,7 +281,7 @@ void EmulatorController::Run(const std::string& corePath, const std::string& rom
 
     server->logger.log(id, ": Finished initialization.");
 
-    if(!canRunNoGame) {
+    if(!canRunNoGame && !romPath.empty()) {
         retro_game_info info = {romPath.c_str(), nullptr, static_cast<size_t>(boost::filesystem::file_size(romFile)),
                                 nullptr};
         std::ifstream fo(romFile.string(), std::ios::binary);
@@ -291,6 +300,8 @@ void EmulatorController::Run(const std::string& corePath, const std::string& rom
                 server->logger.err(id, ": Failed to load data from the file. Do you have the correct access rights?");
                 return;
             }
+        } else {
+            info.path = romPath.c_str();
         }
 
         if (!Core.LoadGame(&info)) {
@@ -300,7 +311,7 @@ void EmulatorController::Run(const std::string& corePath, const std::string& rom
     } else {
         if(!Core.LoadGame(nullptr)) {
             server->logger.err(id, ": Core requested loading without a game, but had an error in the load_game(NULL) call. Possibly an issue with the core?");
-            return;
+            //return;
         }
     }
 
@@ -425,6 +436,30 @@ void EmulatorController::Run(const std::string& corePath, const std::string& rom
     }
 }
 
+retro_proc_address_t EmulatorController::LookupProc(const char* sym) {
+    /* I really *don't* want to make a lookup system having *every* single gl function, so
+     * until I can find a better solution its just gonna print out anything unknown that was
+     * requested so that I can manually add it. Enough of that and the majority of the openGL
+     * functions used will be covered. In the future may look into using a dlsym call
+     */
+    server->logger.log("Unknown gl sym requested: '", std::string(sym), "'");
+    server->logger.log("I'm just gonna die now...");
+    *((unsigned int*)0) = 0xDEADBEEF;
+    return {};
+}
+
+uintptr_t EmulatorController::GetFrameBuffer() {
+    server->logger.log("Hwbuffer out: ", hwBuffer);
+    if(hwBuffer == 0) {
+        glGenFramebuffers(1, &hwBuffer);
+        server->logger.log("HWbuffer in: ", hwBuffer);
+    }
+
+    server->logger.log("HWbuffer after: ", hwBuffer);
+
+    return static_cast<uintptr_t>(hwBuffer);
+}
+
 bool EmulatorController::OnEnvironment(unsigned cmd, void *data) {
     auto &config = server->config;
     switch (cmd) {
@@ -450,11 +485,39 @@ bool EmulatorController::OnEnvironment(unsigned cmd, void *data) {
         case RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME:
             canRunNoGame = *static_cast<const bool*>(data);
             return true;
-            // Will be implemented
-        case RETRO_ENVIRONMENT_SET_HW_RENDER:
+        case (RETRO_ENVIRONMENT_SET_HW_RENDER | RETRO_ENVIRONMENT_EXPERIMENTAL):
+        case RETRO_ENVIRONMENT_SET_HW_RENDER: {
+            auto core_hw_cb = static_cast<retro_hw_render_callback *>(data);
+
+            // none = 0, opengl 2.x = 1, gles2 = 2, opengl modern = 3, gles3 = 4, gles 3.1+ = 5, vulkan = 6
+            server->logger.log("GL Context type: ", core_hw_cb->context_type);
+
+            if (core_hw_cb->context_type == RETRO_HW_CONTEXT_DIRECT3D) // Sorry Windows, not yet buddy :(
+                return false;
+
+            // (Something about checking version compatibility right about here...)
+
+            // Try to init glew
+            glewExperimental = GL_TRUE;
+            auto err = glewInit();
+            if (err != GLEW_OK) {
+                server->logger.log("Warning: Failed to initialize GLEW. Refusing hardware render and letting core drop back to software render if it wants to.");
+                server->logger.log("Error had value ", glewGetErrorString(err));
+                return false;
+            }
+
+            // Set a retro_hw_get_current_framebuffer_t (.get_current_framebuffer) for legacy
+            core_hw_cb->get_current_framebuffer = GetFrameBuffer;
+
+            // Set a retro_hw_get_proc_address_t (.get_proc_address)
+            core_hw_cb->get_proc_address = LookupProc;
+
             server->logger.log("Core requested a GL render");
 
+            hwRender = true;
+
             return true;
+        }
         case RETRO_ENVIRONMENT_GET_LOG_INTERFACE: // See core logs
         case RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO: // I think this is called when the avinfo changes
         case RETRO_ENVIRONMENT_GET_LIBRETRO_PATH: // Path to the libretro so core
@@ -486,7 +549,11 @@ void EmulatorController::OnVideoRefresh(const void *data, unsigned width, unsign
         videoFormat.height = height;
         videoFormat.pitch = pitch;
         videoFormat.stride = videoFormat.width - 16 * std::ceil(videoFormat.width / 16.0);
-        videoFormat.buffer = std::vector <std::uint8_t>((videoFormat.width + videoFormat.stride) * videoFormat.height * 4);
+
+        if(!hwRender)
+            videoFormat.buffer = std::vector<std::uint8_t>((videoFormat.width + videoFormat.stride) * videoFormat.height * 4);
+        else
+            videoFormat.buffer = std::vector<std::uint8_t>(videoFormat.width * videoFormat.height * 3); // GL will output RGB vec, exact size
     }
 
     currentBuffer = data;
@@ -576,8 +643,6 @@ bool EmulatorController::SetPixelFormat(const retro_pixel_format fmt) {
             videoFormat.fmt = fmt;
         }
             return true;
-            // TODO: Fix (find a core that uses this, bsnes accuracy gives a zeroed
-            // out video buffer so thats a no go)
         case RETRO_PIXEL_FORMAT_XRGB8888:  // 32 bit
             server->logger.log(" Format set: XRGB8888");
             videoFormat.fmt = fmt;
@@ -606,10 +671,27 @@ bool EmulatorController::SetPixelFormat(const retro_pixel_format fmt) {
 
 Frame EmulatorController::GetFrame() {
     std::unique_lock <std::mutex> lk(videoMutex);
-    if (currentBuffer == nullptr) return Frame{0, 0, {}};
+    if (currentBuffer == nullptr && !hwRender) {
+        server->logger.log("Invalid buffer and software render");
+        return Frame{0, 0, {}};
+    }
+
+    if(hwRender) {
+        server->logger.log("hw render set");
+        if(hwBuffer == 0) {
+            server->logger.log("invalid buff");
+            return Frame{0, 0, {}};
+        }
+
+        glReadnPixels(0, 0, videoFormat.width, videoFormat.height, GL_RGB, GL_UNSIGNED_BYTE, videoFormat.buffer.size(), videoFormat.buffer.data());
+
+        server->logger.log("Read px");
+        return Frame{videoFormat.width, videoFormat.height, videoFormat.width, RGB888, static_cast<const std::uint8_t *>(videoFormat.buffer.data())};
+    }
+
 
     if(videoFormat.fmt == RETRO_PIXEL_FORMAT_XRGB8888)
-        return Frame{videoFormat.width, videoFormat.height, videoFormat.stride, static_cast<const std::uint8_t *>(currentBuffer)};
+        return Frame{videoFormat.width, videoFormat.height, videoFormat.stride + videoFormat.width, XRGB8888, static_cast<const std::uint8_t *>(currentBuffer)};
 
     size_t j{0};
 
@@ -766,7 +848,7 @@ Frame EmulatorController::GetFrame() {
         i += videoFormat.pitch - 2*videoFormat.width;
     }
 
-    return Frame{videoFormat.width, videoFormat.height, videoFormat.stride, videoFormat.buffer.data()};
+    return Frame{videoFormat.width, videoFormat.height, videoFormat.stride, XRGB8888, videoFormat.buffer.data()};
 }
 
 void EmulatorController::Save() {

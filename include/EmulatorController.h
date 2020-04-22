@@ -40,6 +40,8 @@ struct Frame;
 #include <mmintrin.h>
 #include <smmintrin.h>
 
+#include <GL/glew.h>
+
 #include "libretro.h"
 
 #include "common/typedefs.h"
@@ -244,9 +246,14 @@ struct Frame {
     std::uint32_t height{0};
 
     /**
-     * Stride of the frame in px
+     * Pitch of the frame in px
      */
-     std::uint32_t pitch{0};
+    std::uint32_t pitch{0};
+
+    /**
+     * Pixel format the frame assumes
+     */
+    unsigned fmt;
 
     /**
      * Packed RGB array containing the data of the frame
@@ -420,4 +427,8 @@ namespace EmulatorController {
      * Called on emulator controller startup, tries to load save state if possible
      */
     void Load();
+
+    retro_proc_address_t LookupProc(const char* sym);
+
+    uintptr_t GetFrameBuffer();
 }
