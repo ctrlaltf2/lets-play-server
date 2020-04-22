@@ -82,6 +82,11 @@ namespace EmulatorController {
     static thread_local bool canRunNoGame{false};
 
     /**
+     * libretro hardware render interface info
+     */
+    static thread_local retro_hw_render_callback hw_render_cb;
+
+    /**
      * Whether or not this emulator is fast forwarded
      */
     static thread_local std::atomic<bool> fastForward{false};
@@ -234,6 +239,15 @@ void EmulatorController::Run(const std::string& corePath, const std::string& rom
     Core.SetAudioSampleBatch(OnBatchAudioSample);
     Core.Init();
 
+    retro_system_info system{};
+    Core.GetSystemInfo(&system);
+
+    // Do a lil safe copy here
+    coreName = std::string(30, char(0));
+    std::snprintf(&coreName[0], 99, "%s", system.library_name);
+
+    server->logger.log(id, ": Core name: '", coreName, "'");
+
     // Load forbidden button combos into memory
     auto jForbiddenCombos = server->config.get<nlohmann::json>(nlohmann::json::value_t::array, "serverConfig", "emulators", id, "forbiddenCombos");
 
@@ -263,8 +277,6 @@ void EmulatorController::Run(const std::string& corePath, const std::string& rom
                                 nullptr};
         std::ifstream fo(romFile.string(), std::ios::binary);
 
-        retro_system_info system{};
-        Core.GetSystemInfo(&system);
 
         if (!system.need_fullpath) {
             romData = new char[boost::filesystem::file_size(romFile)];
@@ -441,6 +453,7 @@ bool EmulatorController::OnEnvironment(unsigned cmd, void *data) {
             // Will be implemented
         case RETRO_ENVIRONMENT_SET_HW_RENDER:
             server->logger.log("Core requested a GL render");
+
             return true;
         case RETRO_ENVIRONMENT_GET_LOG_INTERFACE: // See core logs
         case RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO: // I think this is called when the avinfo changes
