@@ -76,6 +76,12 @@ namespace EmulatorController {
     static thread_local retro_log_callback log_cb;
 
     /**
+     * Flag for if the core supports loading without a ROM. Some cores (Craft, 3dengine, 2048),
+     * come bundled with the game related data and can run right out of the box.
+     */
+    static thread_local bool canRunNoGame{false};
+
+    /**
      * Whether or not this emulator is fast forwarded
      */
     static thread_local std::atomic<bool> fastForward{false};
@@ -252,8 +258,7 @@ void EmulatorController::Run(const std::string& corePath, const std::string& rom
 
     server->logger.log(id, ": Finished initialization.");
 
-    // If provided an empty path, just skip this part. Leaving a blank path allows for cores that don't need roms to be loaded
-    if(!romPath.empty()) {
+    if(!canRunNoGame) {
         retro_game_info info = {romPath.c_str(), nullptr, static_cast<size_t>(boost::filesystem::file_size(romFile)),
                                 nullptr};
         std::ifstream fo(romFile.string(), std::ios::binary);
@@ -276,10 +281,13 @@ void EmulatorController::Run(const std::string& corePath, const std::string& rom
             }
         }
 
-        // TODO: compressed roms and stuff
-
         if (!Core.LoadGame(&info)) {
             server->logger.err(id, ": Failed to load game. Was the rom the correct file type?");
+            return;
+        }
+    } else {
+        if(!Core.LoadGame(nullptr)) {
+            server->logger.err(id, ": Core requested loading without a game, but had an error in the load_game(NULL) call. Possibly an issue with the core?");
             return;
         }
     }
@@ -427,7 +435,13 @@ bool EmulatorController::OnEnvironment(unsigned cmd, void *data) {
             break;
         case RETRO_ENVIRONMENT_GET_OVERSCAN: // We don't (usually) want overscan
             return false;
+        case RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME:
+            canRunNoGame = *static_cast<const bool*>(data);
+            return true;
             // Will be implemented
+        case RETRO_ENVIRONMENT_SET_HW_RENDER:
+            server->logger.log("Core requested a GL render");
+            return true;
         case RETRO_ENVIRONMENT_GET_LOG_INTERFACE: // See core logs
         case RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO: // I think this is called when the avinfo changes
         case RETRO_ENVIRONMENT_GET_LIBRETRO_PATH: // Path to the libretro so core
@@ -438,8 +452,10 @@ bool EmulatorController::OnEnvironment(unsigned cmd, void *data) {
         case RETRO_ENVIRONMENT_GET_LANGUAGE: // Some cores might use this and its simple to add
         case RETRO_ENVIRONMENT_GET_VFS_INTERFACE: // Some cores use this and it wouldn't be hard to implement with fstream and filesystem being a thing
         case RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE: // Some cores might not use audio, so don't even bother with sending the audio streams
-        case RETRO_ENVIRONMENT_GET_HW_RENDER_INTERFACE: // Might want this for support for more hardware accelerated cores
-        default:return false;
+        return false;
+        default:
+            server->logger.log("Unknown environment command: ", cmd);
+            return false;
             // clang-format on
     }
     return true;

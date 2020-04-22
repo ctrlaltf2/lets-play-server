@@ -55,7 +55,7 @@ void LetsPlayServer::Run(std::uint16_t port) {
         {
             std::unique_lock<std::mutex> lk(m_QueueMutex);
             m_WorkQueue.push(
-                    Command{kCommandType::AddEmu, {"emu1", "./core", "./rom", "Test Emu"}, {}, ""});
+                    Command{kCommandType::AddEmu, {"emu1", "./core", "", "Test Emu"}, {}, ""});
             //m_WorkQueue.push(
             //        Command{kCommandType::AddEmu, {"emu2", "./snes9x.so", "./Earthbound.smc", "Earthbound (SNES)"}, {}, ""});
             m_QueueNotifier.notify_one();
