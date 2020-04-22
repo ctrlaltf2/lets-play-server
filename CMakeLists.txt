@@ -17,11 +17,13 @@ hunter_add_package(Boost COMPONENTS system filesystem program_options)
 hunter_add_package(websocketpp)
 hunter_add_package(libjpeg-turbo)
 hunter_add_package(nlohmann_json)
+hunter_add_package(glfw)
 
 find_package(Boost CONFIG REQUIRED system filesystem program_options)
 find_package(websocketpp CONFIG REQUIRED)
 find_package(libjpeg-turbo CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
+find_package(glfw3 CONFIG REQUIRED)
 
 find_package(Threads)
 
@@ -131,4 +133,5 @@ target_link_libraries(letsplay
         websocketpp::websocketpp
         libjpeg-turbo::turbojpeg-static
         nlohmann_json::nlohmann_json
+        glfw
 )
