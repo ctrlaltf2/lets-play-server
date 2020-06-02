@@ -21,13 +21,7 @@ class LetsPlayServer;
 #include <thread>
 #include <vector>
 
-#define _WEBSOCKETPP_CPP11_THREAD_
-
 #include <turbojpeg.h>
-
-#include <websocketpp/common/connection_hdl.hpp>
-#include <websocketpp/config/asio_no_tls.hpp>
-#include <websocketpp/server.hpp>
 
 #include <nlohmann/json.hpp>
 
@@ -43,11 +37,6 @@ class LetsPlayServer;
 #include "Logging.hpp"
 #include "Random.h"
 #include "Scheduler.h"
-
-typedef websocketpp::server<websocketpp::config::asio> wcpp_server;
-
-using websocketpp::lib::placeholders::_1;
-using websocketpp::lib::placeholders::_2;
 
 /**
  * @enum kCommandType

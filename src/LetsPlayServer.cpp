@@ -114,6 +114,7 @@ void LetsPlayServer::OnConnect(websocketpp::connection_hdl hdl) {
     // Send available emulators
     // TODO?: Make this an internal work queue message?
 
+    // NOTE: This seems to be unneeded. Might be for making an early exit if we have a ghost user??
     LetsPlayUserHdl user_hdl;
     decltype(m_Users)::iterator search;
     {
