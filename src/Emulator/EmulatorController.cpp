@@ -37,7 +37,7 @@ namespace EmulatorController {
     /**
      * Turn queue for this emulator
      */
-    static thread_local std::vector <LetsPlayUserHdl> turnQueue;
+    static thread_local std::vector <boost::uuids::uuid> turnQueue;
 
     /**
      * Turn queue mutex
@@ -173,6 +173,11 @@ namespace EmulatorController {
       * If, for some reason, this value is exported via the EmulatorProxy, then it should be changed to an atomic.
       */
       static thread_local std::uint64_t users{0};
+
+      /**
+       * Users connected to this emulator
+       */
+      static thread_local std::vector<boost::uuids::uuid> users_;
 }
 
 
@@ -313,7 +318,7 @@ void EmulatorController::Run(const std::string& corePath, const std::string& rom
         // Check turn state
         // Possible race condition but wouldn't really matter because it'd be a read during a write onto a boolean value
         if (!turnQueue.empty()) {
-            if (auto currentUser = turnQueue[0].lock()) {
+            if (auto& currentUser = turnQueue[0]) {
                 // Things that could happen:
                 // Newly added, no turn grant
                 // Current, has turn grant
@@ -365,21 +370,21 @@ void EmulatorController::Run(const std::string& corePath, const std::string& rom
                     server->GeneratePreview(id);
                     break;
                 case kEmuCommandType::TurnRequest:
-                    if (command.user_hdl)
-                        AddTurnRequest(*command.user_hdl);
+                    if (command.user)
+                        AddTurnRequest(command->user);
                     break;
                 case kEmuCommandType::UserDisconnect:
                     if(users)
                         --users;
-                    if (command.user_hdl)
-                        UserDisconnected(*command.user_hdl);
+                    if (command.user)
+                        UserDisconnected(command->user);
                     break;
                 case kEmuCommandType::FastForward:
                     FastForward();
                     break;
                 case kEmuCommandType::UserConnect:
-                    ++users;
-                    EmulatorController::SendTurnList();
+                    if (command.user)
+                        UserConnected(command->user);
                     break;
             }
             std::unique_lock <std::mutex> lk(queueMutex);
@@ -486,10 +491,10 @@ size_t EmulatorController::OnBatchAudioSample(const std::int16_t */*data*/, size
     return frames;
 }
 
-void EmulatorController::AddTurnRequest(LetsPlayUserHdl user_hdl) {
+void EmulatorController::AddTurnRequest(boost::uuids::uuid who) {
     // Add user to the list
     std::unique_lock <std::mutex> lk(turnMutex);
-    turnQueue.emplace_back(user_hdl);
+    turnQueue.push_back(who);
 
     // Send off updated turn list
     EmulatorController::SendTurnList();
@@ -501,25 +506,43 @@ void EmulatorController::SendTurnList() {
         std::unique_lock <std::mutex> lk(turnMutex, std::try_to_lock);
 
         std::vector<std::string> names{"turns"};
-        for (auto user_hdl : turnQueue) {
-            // If pointer hasn't been deleted and user is still connected
-            auto user = user_hdl.lock();
-            if (user && user->connected)
-                names.push_back(user->username());
-        }
+        std::copy(turnQueue.begin(), turnQueue.end(), std::back_inserter(names));
+
         return LetsPlayProtocol::encode(names);
     }();
 
     server->BroadcastToEmu(id, turnList, websocketpp::frame::opcode::text);
 }
 
-void EmulatorController::UserDisconnected(LetsPlayUserHdl user_hdl) {
-    // Update flag in case the turn queue gets to the user before its removed from memory in server
-    if (auto user = user_hdl.lock())
-        user->connected = false;
+void EmulatorController::UserDisconnected(boost::uuids::uuid who) {
+    // Find uuid in users list, starting from end (more likely to find it towards the end probably)
+    auto users_loc = std::find(users_.rbegin(), users_.rend(), who);
+
+    assert(users_loc != users_.rend()); // Search should have turned up with something
+
+    users_.erase(users_loc);
+
+    // Make sure their place in the turn queue gets removed
+    {
+        std::unique_lock<std::mutex> lk(turnMutex);
+
+        auto turns_loc = std::find(turnQueue.begin(), turnQueue.end(), who);
+
+        if(turns_loc != users.end()) {
+            turnQueue.erase(turns_loc);
+
+        }
+    }
 }
 
-void EmulatorController::UserConnected(LetsPlayUserHdl) {
+void EmulatorController::UserConnected(boost::uuids::uuid who) {
+    assert([&]() {
+        auto search = std::find(users.begin(), users.end(), who);
+        return search == users.end();
+    }() == true); // User shouldn't already be connected to the emulator
+
+    users_.push_back(who);
+
     EmulatorController::SendTurnList();
 }
 

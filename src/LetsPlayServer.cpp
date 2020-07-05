@@ -180,7 +180,7 @@ void LetsPlayServer::OnDisconnect(websocketpp::connection_hdl hdl) {
                 // TODO:? Check if emu exists
                 auto &emu = m_Emus[user->connectedEmu()];
 
-                EmuCommand c{kEmuCommandType::UserDisconnect, user_hdl};
+                EmuCommand c{kEmuCommandType::UserDisconnect, user->uuid_boost()};
                 {
                     std::unique_lock<std::mutex> lkk(*(emu->queueMutex));
                     emu->queue->push(c);
@@ -716,7 +716,7 @@ void LetsPlayServer::QueueThread() {
                         auto emu = m_Emus[command.emuID];
                         if (emu) {
                             user->requestedTurn = true;
-                            EmuCommand c{kEmuCommandType::TurnRequest, command.user_hdl};
+                            EmuCommand c{kEmuCommandType::TurnRequest, user->uuid_boost()};
                             {
                                 std::unique_lock<std::mutex> lkkk(*(emu->queueMutex));
                                 emu->queue->push(c);
@@ -795,7 +795,7 @@ void LetsPlayServer::QueueThread() {
 
                         auto &emu = m_Emus[command.params[0]];
 
-                        EmuCommand c{kEmuCommandType::UserConnect};
+                        EmuCommand c{kEmuCommandType::UserConnect, user->uuid_boost()};
 
                         {
                             std::unique_lock<std::mutex> lkk(*(emu->queueMutex));

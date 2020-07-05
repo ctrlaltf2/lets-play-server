@@ -63,3 +63,7 @@ std::string LetsPlayUser::uuid() const {
     s += '}';
     return s;
 }
+
+boost::uuids::uuid LetsPlayUser::uuid_boost() const {
+    return m_uuid;
+}

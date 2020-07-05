@@ -35,6 +35,10 @@ struct Frame;
 #include <boost/filesystem.hpp>
 #include <boost/optional.hpp>
 
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_generators.hpp>
+#include <boost/uuid/uuid_io.hpp>
+
 #include <tmmintrin.h>
 #include <emmintrin.h>
 #include <mmintrin.h>
@@ -90,7 +94,7 @@ struct EmuCommand {
     /**
      *  Who, if anyone, generated the command
      */
-    boost::optional<LetsPlayUserHdl> user_hdl;
+    boost::uuids::uuid user;
 };
 
 /**
@@ -364,11 +368,11 @@ namespace EmulatorController {
     size_t OnBatchAudioSample(const std::int16_t *data, size_t frames);
 
     /**
-     * Adds a user to the turn request queue, invoked by parent LetsPlayServer
+     * Adds a user to the turn request queue, invoked by client to this emulator
      *
-     * @param user_hdl Who to add to the turn queue
+     * @param who Who to add to the turn queue
      */
-    void AddTurnRequest(LetsPlayUserHdl user_hdl);
+    void AddTurnRequest(boost::uuids::uuid who);
 
     /**
      * Send the turn list to the connected users
@@ -378,16 +382,16 @@ namespace EmulatorController {
     /**
      * Called when a user disconnects.
      *
-     * @param user_hdl Who disconnected
+     * @param who Who disconnected
      */
-    void UserDisconnected(LetsPlayUserHdl user_hdl);
+    void UserDisconnected(boost::uuids::uuid who);
 
     /**
      * Called when a user connects.
      *
-     * @param user_hdl Who connected
+     * @param who Who connected
      */
-    void UserConnected(LetsPlayUserHdl user_hdl);
+    void UserConnected(boost::uuids::uuid who);
 
     /**
      * Called when the emulator requests/announces a change in the pixel format

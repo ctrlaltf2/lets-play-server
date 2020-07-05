@@ -137,8 +137,14 @@ public:
 
     /**
      * Get the uuid as a string
+     * @deprecated Please use LetsPlayUser::uuid_boost
      */
     std::string uuid() const;
+
+    /**
+     * Get the uuid as a uuid
+     */
+    boost::uuids::uuid uuid_boost() const;
 
     /**
      * Set the IP string for the user
